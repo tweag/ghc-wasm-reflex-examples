@@ -1,0 +1,108 @@
+name: build
+
+on:
+  merge_group:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  nix-build:
+    name: nix-build
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: checkout
+        uses: actions/checkout@v4
+
+      - name: install-nix
+        uses: DeterminateSystems/nix-installer-action@v15
+
+      - name: build-frontend
+        run: |
+          nix develop --command bash -c "cd frontend && wasm32-wasi-cabal update && exec ./build.sh --debuginfo --low-memory-unused --converge --gufa --flatten --rereloop -Oz"
+
+  ghcup-build:
+    name: ghcup-build
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: install-happy
+        run: |
+          cabal path --installdir >> "$GITHUB_PATH"
+          cabal update -z
+          cabal install -z happy
+
+      - name: checkout
+        uses: actions/checkout@v4
+
+      - name: ghc-wasm-meta
+        run: |
+          pushd "$(mktemp -d)"
+          curl -f -L --retry 5 https://gitlab.haskell.org/ghc/ghc-wasm-meta/-/archive/master/ghc-wasm-meta-master.tar.gz | tar xz --strip-components=1
+          SKIP_GHC=1 ./setup.sh
+          ~/.ghc-wasm/add_to_github_path.sh
+          popd
+
+      - name: cabal
+        run: |
+          ghcup config add-release-channel https://raw.githubusercontent.com/haskell/ghcup-metadata/develop/ghcup-prereleases-0.0.8.yaml
+          ghcup install cabal --set 3.15.0.0.2024.10.3
+
+      - name: wasm32-wasi-ghc
+        run: |
+          ghcup config add-release-channel https://raw.githubusercontent.com/haskell/ghcup-metadata/develop/ghcup-cross-0.0.8.yaml
+          ghcup install ghc --set wasm32-wasi-9.10.1.20241021 -- $CONFIGURE_ARGS
+
+      - name: build-frontend
+        run: |
+          cd frontend
+          cabal \
+            --with-compiler=wasm32-wasi-ghc \
+            --with-hc-pkg=wasm32-wasi-ghc-pkg \
+            --with-hsc2hs=wasm32-wasi-hsc2hs \
+            update
+          ./build.sh --debuginfo --low-memory-unused --converge --gufa --flatten --rereloop -Oz
+
+  non-nix-build:
+    name: non-nix-build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    steps:
+
+      - name: install-happy
+        run: |
+          cabal path --installdir >> "$GITHUB_PATH"
+          cabal update -z
+          cabal install -z happy
+
+      - name: checkout
+        uses: actions/checkout@v4
+
+      - name: ghc-wasm-meta
+        run: |
+          pushd "$(mktemp -d)"
+          curl -f -L --retry 5 https://gitlab.haskell.org/ghc/ghc-wasm-meta/-/archive/master/ghc-wasm-meta-master.tar.gz | tar xz --strip-components=1
+          ./setup.sh
+          ~/.ghc-wasm/add_to_github_path.sh
+          popd
+        env:
+          FLAVOUR: '9.10'
+
+      - name: build-frontend
+        run: |
+          cd frontend
+          ./build.sh --debuginfo --low-memory-unused --converge --gufa --flatten --rereloop -Oz
+
+      - name: upload-pages-artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: frontend/dist
+          retention-days: 90
+
+      - name: deploy-pages
+        uses: actions/deploy-pages@v4

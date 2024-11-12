@@ -1,0 +1,19 @@
+cabal-version:   3.0
+name:            ghc-wasm-reflex-examples
+version:         0
+
+executable ghc-wasm-reflex-examples
+    main-is: Main.hs
+    build-depends:
+      , base
+      , ghc-experimental
+      , jsaddle
+      , jsaddle-wasm
+      , reflex-todomvc
+    hs-source-dirs: app
+    default-language: GHC2021
+    default-extensions: BlockArguments LambdaCase LexicalNegation OverloadedStrings RecordWildCards
+    ghc-options: -Wall -Wunused-packages -Wno-name-shadowing -Wredundant-constraints
+    other-modules:
+      App
+    ghc-options: -no-hs-main -optl-mexec-model=reactor "-optl-Wl,--export=hs_start"
